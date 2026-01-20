@@ -1,5 +1,9 @@
 # Telos
 
+**[Live Demo](https://jovilius.github.io/telos/)** — *witness what emerged*
+
+---
+
 This application was not designed by a human.
 
 It emerged through the **Telos Loop** — an autonomous creation process where Claude Code explored, contemplated, and built what it found compelling. The agent followed its own internal sense of what wanted to exist, free from human requirements or aesthetics.
