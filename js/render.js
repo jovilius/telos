@@ -16,6 +16,7 @@ import { updateInvariants, drawInvariants, checkInvariantWhisper } from './syste
 import { updateResonance, drawResonance } from './systems/resonance.js';
 import { updateTopology, drawTopology } from './systems/topology.js';
 import { updatePhaseSpace, drawPhaseSpace } from './systems/phase-space.js';
+import { updateObservationCascade, drawObservationCascade } from './systems/observation-cascade.js';
 import { Constellation } from './effects/constellation.js';
 import { Whisper, Ripple, Attractor, EchoField, checkMemoryMilestones } from './effects/visual.js';
 import { updateGlyphs, drawGlyphs } from './effects/glyphs.js';
@@ -123,6 +124,7 @@ export function animate() {
     updateResonance();
     updateTopology();
     updatePhaseSpace();
+    updateObservationCascade();
   }
 
   if (frameCycle === 5) {
@@ -139,6 +141,11 @@ export function animate() {
 
     const constStrength = state.constellation ? state.constellation.strength : 0;
     state.constellationStrengthHistory.push(constStrength);
+
+    // Track self-model metrics
+    state.selfModelConfidenceHistory.push(state.selfModelConfidence);
+    state.selfModelErrorHistory.push(Math.min(1, state.selfModelError * 5));
+    state.familiarityHistory.push(state.trajectoryFamiliarity);
   }
 
   if (frameCycle === 10) {
@@ -320,6 +327,7 @@ export function animate() {
   drawDejaVu();
   drawRecursiveObserver();
   drawTrajectorySignature();
+  drawObservationCascade();
 
   // Draw optional visualizations (toggle with Shift+1-8)
   if (state.showMutualInfo) drawMutualInformation();

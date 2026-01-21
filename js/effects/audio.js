@@ -5,6 +5,7 @@ import { HARMONIC_RATIOS, MOOD_ROOT_FREQUENCIES, CONSTELLATION_HARMONICS, MOODS 
 import * as state from '../state.js';
 import { getResonanceState } from '../systems/resonance.js';
 import { getTopologyState } from '../systems/topology.js';
+import { getCascadeState, getStrangeLoopIntensity } from '../systems/observation-cascade.js';
 
 // Initialize WebAudio
 export function initAudio() {
@@ -423,6 +424,136 @@ export function playGlyphSound(encoding) {
   presenceOsc.stop(now + 1);
 }
 
+// ============== CASCADE GLYPH SOUND ==============
+// Special sonification for cascade synchronization events
+// Creates a harmonic series where each level is a different overtone
+// The sound structure mirrors the observation hierarchy
+
+export function playCascadeGlyphSound(encoding) {
+  if (!state.audioEnabled || !state.audioContext) return;
+
+  const { audioContext, masterGain } = state;
+  const now = audioContext.currentTime;
+
+  // Encoding for cascade glyphs:
+  // [0-3]: level coherences, [4]: avg coherence, [5]: sync intensity, [6]: strange loop
+
+  // Root frequency based on average coherence - higher coherence = higher root
+  const avgCoherence = encoding[4] || 0.5;
+  const rootFreq = 110 + avgCoherence * 110; // 110-220 Hz (A2-A3)
+
+  // Create a harmonic series where each level is a different overtone
+  // Level 0 = root, Level 1 = 2nd partial, Level 2 = 3rd partial, Level 3 = 4th partial
+  // But the partials are weighted by level coherence
+  const harmonicRatios = [1, 2, 3, 4]; // Natural harmonic series
+
+  for (let i = 0; i < 4; i++) {
+    const levelCoherence = encoding[i] || 0;
+    if (levelCoherence < 0.1) continue; // Skip silent levels
+
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+
+    // Frequency: root * harmonic ratio
+    const freq = rootFreq * harmonicRatios[i];
+
+    // Higher levels use purer waveforms (more coherent observation)
+    osc.type = i < 2 ? 'sine' : 'triangle';
+    osc.frequency.value = freq;
+
+    // Filter resonates at the harmonic frequency
+    filter.type = 'bandpass';
+    filter.frequency.value = freq;
+    filter.Q.value = 8 + levelCoherence * 8; // Higher coherence = sharper resonance
+
+    // Cascade effect: each level enters slightly later (observations cascade down)
+    const attackTime = now + i * 0.08;
+    const peakTime = attackTime + 0.05;
+    const sustainTime = peakTime + 0.3 + avgCoherence * 0.5;
+    const endTime = sustainTime + 0.4;
+
+    // Volume based on level coherence - louder when coherent
+    const volume = 0.02 * levelCoherence * (1 - i * 0.15); // Fundamental loudest
+
+    gain.gain.setValueAtTime(0, attackTime);
+    gain.gain.linearRampToValueAtTime(volume, peakTime);
+    gain.gain.setValueAtTime(volume * 0.7, sustainTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, endTime);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(masterGain);
+
+    osc.start(attackTime);
+    osc.stop(endTime + 0.1);
+  }
+
+  // Strange loop sound: descending figure connecting highest to lowest
+  const strangeLoopIntensity = encoding[6] || 0;
+  if (strangeLoopIntensity > 0.3) {
+    const loopOsc = audioContext.createOscillator();
+    const loopGain = audioContext.createGain();
+    const loopFilter = audioContext.createBiquadFilter();
+
+    loopOsc.type = 'sine';
+
+    loopFilter.type = 'lowpass';
+    loopFilter.frequency.value = 800;
+
+    // Frequency glides from highest harmonic down to root (loop closing)
+    const highFreq = rootFreq * 4; // 4th harmonic
+    const lowFreq = rootFreq; // Root
+
+    const loopStart = now + 0.35;
+    const loopEnd = loopStart + 0.6;
+
+    loopOsc.frequency.setValueAtTime(highFreq, loopStart);
+    loopOsc.frequency.exponentialRampToValueAtTime(lowFreq, loopEnd);
+
+    const loopVolume = 0.025 * strangeLoopIntensity;
+    loopGain.gain.setValueAtTime(0, loopStart);
+    loopGain.gain.linearRampToValueAtTime(loopVolume, loopStart + 0.05);
+    loopGain.gain.exponentialRampToValueAtTime(0.001, loopEnd);
+
+    loopOsc.connect(loopFilter);
+    loopFilter.connect(loopGain);
+    loopGain.connect(masterGain);
+
+    loopOsc.start(loopStart);
+    loopOsc.stop(loopEnd + 0.1);
+  }
+
+  // Sync chime: major chord when sync intensity is high
+  const syncIntensity = encoding[5] || 0;
+  if (syncIntensity > 0.5) {
+    // Major triad based on root
+    const chordFreqs = [rootFreq, rootFreq * 1.25, rootFreq * 1.5]; // Root, major 3rd, perfect 5th
+
+    chordFreqs.forEach((freq, i) => {
+      const chordOsc = audioContext.createOscillator();
+      const chordGain = audioContext.createGain();
+
+      chordOsc.type = 'sine';
+      chordOsc.frequency.value = freq * 2; // One octave up
+
+      const chordStart = now + 0.5 + i * 0.03;
+      const chordEnd = chordStart + 1.2;
+
+      const chordVolume = 0.015 * syncIntensity;
+      chordGain.gain.setValueAtTime(0, chordStart);
+      chordGain.gain.linearRampToValueAtTime(chordVolume, chordStart + 0.03);
+      chordGain.gain.exponentialRampToValueAtTime(0.001, chordEnd);
+
+      chordOsc.connect(chordGain);
+      chordGain.connect(masterGain);
+
+      chordOsc.start(chordStart);
+      chordOsc.stop(chordEnd + 0.1);
+    });
+  }
+}
+
 // ============== RESONANCE SONIFICATION ==============
 // The sound of feedback: coherence becomes harmony, dissonance becomes beating
 
@@ -432,6 +563,9 @@ let resonanceGain = null;
 let resonanceFilter = null;
 let topologyOsc = null;
 let topologyGain = null;
+let cascadeOsc = null;
+let cascadeGain = null;
+let cascadeFilter = null;
 
 function initResonanceAudio() {
   if (!state.audioContext || resonanceOsc1) return;
@@ -481,6 +615,27 @@ function initResonanceAudio() {
   topologyGain.connect(masterGain);
 
   topologyOsc.start();
+
+  // Cascade oscillator - represents observation hierarchy synchronization
+  // Uses a higher register to represent the "meta" nature of cascade
+  cascadeOsc = audioContext.createOscillator();
+  cascadeGain = audioContext.createGain();
+  cascadeFilter = audioContext.createBiquadFilter();
+
+  cascadeOsc.type = 'sine';
+  cascadeOsc.frequency.value = 440; // A4 - one octave above topology
+
+  cascadeFilter.type = 'bandpass';
+  cascadeFilter.frequency.value = 440;
+  cascadeFilter.Q.value = 3;
+
+  cascadeGain.gain.value = 0;
+
+  cascadeOsc.connect(cascadeFilter);
+  cascadeFilter.connect(cascadeGain);
+  cascadeGain.connect(masterGain);
+
+  cascadeOsc.start();
 }
 
 function updateResonanceAudio(now) {
@@ -523,6 +678,33 @@ function updateResonanceAudio(now) {
     topologyGain.gain.setTargetAtTime(selfVolume, now, 0.3);
   } else {
     topologyGain.gain.setTargetAtTime(0, now, 0.3);
+  }
+
+  // Cascade observation hierarchy - highest voice
+  // Sounds when cascade levels are synchronized
+  if (cascadeOsc) {
+    const cascade = getCascadeState();
+    const strangeLoop = getStrangeLoopIntensity();
+
+    if (cascade.syncActive || cascade.avgCoherence > 0.4) {
+      // Frequency based on average coherence - higher coherence = purer pitch
+      // Uses higher register to represent meta-meta observation
+      const cascadeFreq = 440 + cascade.avgCoherence * 220; // A4-A5
+
+      // Sync intensity creates a clearer, louder tone
+      const syncBoost = cascade.syncActive ? cascade.syncIntensity : 0;
+      const cascadeVolume = (cascade.avgCoherence * 0.003) + (syncBoost * 0.004);
+
+      cascadeOsc.frequency.setTargetAtTime(cascadeFreq, now, 0.4);
+      cascadeGain.gain.setTargetAtTime(cascadeVolume, now, 0.2);
+
+      // Filter Q increases with strange loop - creates resonant "singing" quality
+      const cascadeQ = 2 + strangeLoop * 8;
+      cascadeFilter.Q.setTargetAtTime(cascadeQ, now, 0.3);
+      cascadeFilter.frequency.setTargetAtTime(cascadeFreq, now, 0.4);
+    } else {
+      cascadeGain.gain.setTargetAtTime(0, now, 0.5);
+    }
   }
 }
 

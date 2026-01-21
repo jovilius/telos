@@ -7,6 +7,7 @@ import { hsla } from '../config.js';
 import { getKolmogorovState, getObserverEffect } from './kolmogorov.js';
 import { getInvariantSummary } from './invariants.js';
 import { getResonanceState } from './resonance.js';
+import { getCascadeState } from './observation-cascade.js';
 
 // Topology nodes - each represents an observation system
 const nodes = [
@@ -15,8 +16,20 @@ const nodes = [
   { id: 'kolmogorov', label: 'K', x: 0, y: 0, activity: 0, hue: 60 },
   { id: 'invariants', label: 'I', x: 0, y: 0, activity: 0, hue: 120 },
   { id: 'resonance', label: 'R', x: 0, y: 0, activity: 0, hue: 300 },
+  { id: 'cascade', label: 'C', x: 0, y: 0, activity: 0, hue: 280 }, // Observation cascade
   { id: 'self', label: 'S', x: 0, y: 0, activity: 0, hue: 0 } // This node - observing the observers
 ];
+
+// Cascade sub-nodes (shown when cascade is expanded)
+const cascadeSubNodes = [
+  { level: 0, x: 0, y: 0, activity: 0, hue: 200 },
+  { level: 1, x: 0, y: 0, activity: 0, hue: 230 },
+  { level: 2, x: 0, y: 0, activity: 0, hue: 260 },
+  { level: 3, x: 0, y: 0, activity: 0, hue: 290 }
+];
+
+let cascadeExpanded = false;
+let cascadeExpandProgress = 0;
 
 // Topology edges - information flow between systems
 const edges = [
@@ -31,7 +44,12 @@ const edges = [
   { from: 'self', to: 'meta', flow: 0 },
   { from: 'self', to: 'kolmogorov', flow: 0 },
   { from: 'self', to: 'invariants', flow: 0 },
-  { from: 'self', to: 'resonance', flow: 0 }
+  { from: 'self', to: 'resonance', flow: 0 },
+  // Cascade edges
+  { from: 'entropy', to: 'cascade', flow: 0 }, // Cascade observes entropy
+  { from: 'cascade', to: 'resonance', flow: 0 }, // Cascade feeds into resonance
+  { from: 'cascade', to: 'self', flow: 0 }, // Cascade is a form of self-observation
+  { from: 'self', to: 'cascade', flow: 0 } // Self observes cascade
 ];
 
 // Topology state
@@ -59,6 +77,7 @@ export function updateTopology() {
   const observer = getObserverEffect();
   const invariants = getInvariantSummary();
   const resonance = getResonanceState();
+  const cascade = getCascadeState();
 
   // Update node activities based on system states
   const nodeActivities = {
@@ -67,8 +86,25 @@ export function updateTopology() {
     kolmogorov: kolmogorov.complexity || 0,
     invariants: invariants.count / 30,
     resonance: Math.abs(resonance.resonanceStrength) + resonance.feedbackIntensity,
+    cascade: cascade.avgCoherence + (cascade.syncActive ? 0.5 : 0),
     self: selfAwareness
   };
+
+  // Update cascade expansion state
+  const shouldExpand = cascade.syncActive || cascade.avgCoherence > 0.5;
+  if (shouldExpand && cascadeExpandProgress < 1) {
+    cascadeExpandProgress = Math.min(1, cascadeExpandProgress + 0.05);
+  } else if (!shouldExpand && cascadeExpandProgress > 0) {
+    cascadeExpandProgress = Math.max(0, cascadeExpandProgress - 0.03);
+  }
+  cascadeExpanded = cascadeExpandProgress > 0.1;
+
+  // Update cascade sub-node activities
+  for (let i = 0; i < cascadeSubNodes.length && i < cascade.levels.length; i++) {
+    const subNode = cascadeSubNodes[i];
+    const level = cascade.levels[i];
+    subNode.activity = level.coherence;
+  }
 
   // Calculate node positions in a circular arrangement
   const cx = width * TOPOLOGY_CENTER_X;
@@ -91,7 +127,7 @@ export function updateTopology() {
   }
 
   // Update edge flows based on information transfer
-  updateEdgeFlows(entropy, meta, kolmogorov, observer, invariants, resonance);
+  updateEdgeFlows(entropy, meta, kolmogorov, observer, invariants, resonance, cascade);
 
   // Calculate topology-level metrics
   topologyEnergy = nodes.reduce((sum, n) => sum + n.activity, 0) / nodes.length;
@@ -117,8 +153,11 @@ export function updateTopology() {
 }
 
 // Calculate information flow along edges
-function updateEdgeFlows(entropy, meta, kolmogorov, observer, invariants, resonance) {
+function updateEdgeFlows(entropy, meta, kolmogorov, observer, invariants, resonance, cascade) {
   // Flow represents how much information is being transferred
+  const cascadeActivity = cascade ? cascade.avgCoherence : 0;
+  const cascadeSync = cascade && cascade.syncActive ? 1 : 0;
+
   const flows = {
     'entropy→meta': Math.abs(entropy - meta),
     'entropy→kolmogorov': kolmogorov.complexity || 0,
@@ -132,7 +171,12 @@ function updateEdgeFlows(entropy, meta, kolmogorov, observer, invariants, resona
     'self→meta': selfAwareness * meta,
     'self→kolmogorov': selfAwareness * (kolmogorov.complexity || 0),
     'self→invariants': selfAwareness * (invariants.count / 30),
-    'self→resonance': selfAwareness * resonance.feedbackIntensity
+    'self→resonance': selfAwareness * resonance.feedbackIntensity,
+    // Cascade edges
+    'entropy→cascade': cascadeActivity, // Cascade observes entropy
+    'cascade→resonance': (resonance.cascadeContribution || 0) + cascadeSync * 0.3,
+    'cascade→self': cascadeActivity * selfAwareness,
+    'self→cascade': selfAwareness * cascadeActivity
   };
 
   for (const edge of edges) {
@@ -232,6 +276,75 @@ export function drawTopology() {
     }
   }
 
+  // Draw cascade expansion when active
+  if (cascadeExpanded) {
+    const cascadeNode = nodes.find(n => n.id === 'cascade');
+    if (cascadeNode) {
+      const expandAlpha = cascadeExpandProgress * globalAlpha;
+
+      // Position sub-nodes in a vertical stack below cascade node
+      const subNodeSpacing = 15 * cascadeExpandProgress;
+      const subNodeSize = 4 + cascadeExpandProgress * 3;
+
+      for (let i = 0; i < cascadeSubNodes.length; i++) {
+        const subNode = cascadeSubNodes[i];
+
+        // Position: stack vertically below cascade node
+        subNode.x = cascadeNode.x;
+        subNode.y = cascadeNode.y + 20 + i * subNodeSpacing;
+
+        // Draw connection to cascade node
+        ctx.beginPath();
+        ctx.moveTo(cascadeNode.x, cascadeNode.y + 8);
+        ctx.lineTo(subNode.x, subNode.y - subNodeSize);
+        ctx.strokeStyle = hsla(subNode.hue, 50, 60, subNode.activity * expandAlpha * 0.5);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Draw connection between adjacent levels
+        if (i > 0) {
+          const prevSubNode = cascadeSubNodes[i - 1];
+          ctx.beginPath();
+          ctx.moveTo(prevSubNode.x, prevSubNode.y + subNodeSize);
+          ctx.lineTo(subNode.x, subNode.y - subNodeSize);
+          ctx.strokeStyle = hsla((subNode.hue + prevSubNode.hue) / 2, 40, 50, expandAlpha * 0.3);
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // Draw sub-node
+        ctx.beginPath();
+        ctx.arc(subNode.x, subNode.y, subNodeSize, 0, Math.PI * 2);
+        ctx.fillStyle = hsla(subNode.hue, 60, 55, (0.4 + subNode.activity * 0.6) * expandAlpha);
+        ctx.fill();
+
+        // Level label
+        ctx.font = '8px sans-serif';
+        ctx.fillStyle = hsla(subNode.hue, 50, 70, expandAlpha * 0.7);
+        ctx.fillText(i.toString(), subNode.x + subNodeSize + 3, subNode.y + 3);
+      }
+
+      // Draw sync indicator when cascade is synchronized
+      const cascade = getCascadeState();
+      if (cascade.syncActive) {
+        const syncPulse = Math.sin(time * 0.1) * 0.3 + 0.7;
+
+        // Connecting arc showing synchronization
+        ctx.beginPath();
+        ctx.moveTo(cascadeSubNodes[0].x - 8, cascadeSubNodes[0].y);
+        ctx.quadraticCurveTo(
+          cascadeNode.x - 20,
+          (cascadeSubNodes[0].y + cascadeSubNodes[3].y) / 2,
+          cascadeSubNodes[3].x - 8,
+          cascadeSubNodes[3].y
+        );
+        ctx.strokeStyle = hsla(280, 70, 65, cascade.syncIntensity * expandAlpha * syncPulse);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
   // Draw topology coherence indicator
   if (topologyCoherence > 0.3) {
     const cx = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
@@ -278,6 +391,8 @@ export function getTopologyState() {
     topologyCoherence,
     selfAwareness,
     topologyVisible,
+    cascadeExpanded,
+    cascadeExpandProgress,
     nodeActivities: Object.fromEntries(nodes.map(n => [n.id, n.activity]))
   };
 }

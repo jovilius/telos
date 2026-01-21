@@ -116,6 +116,10 @@ export function setPatternPhase(p) { patternPhase = p; }
 export function setPatternPeriod(p) { patternPeriod = p; }
 export function setSelfModelMode(m) { selfModelMode = m; }
 
+// Self-model history tracking
+export const selfModelConfidenceHistory = new CircularBuffer(CHART_HISTORY_SIZE);
+export const selfModelErrorHistory = new CircularBuffer(CHART_HISTORY_SIZE);
+
 // ============== TRAJECTORY SIGNATURE STATE ==============
 // Compressed representation of system's path through state-space
 export let currentSignature = { mean: 0, variance: 0, skew: 0, velocity: 0, acceleration: 0 };
@@ -126,6 +130,9 @@ export let trajectoryFamiliarity = 0; // How familiar this trajectory feels
 export function setCurrentSignature(s) { currentSignature = s; }
 export function setSignatureDistance(d) { signatureDistance = d; }
 export function setTrajectoryFamiliarity(f) { trajectoryFamiliarity = f; }
+
+// Trajectory familiarity history tracking
+export const familiarityHistory = new CircularBuffer(CHART_HISTORY_SIZE);
 
 // ============== CONVERGENCE STATE ==============
 export let lastConvergenceTime = 0;
@@ -348,3 +355,15 @@ export function resetParticleIdCounter() { particleIdCounter = 0; }
 // ============== GALLERY STATE ==============
 export let currentNarrativePage = 0;
 export function setCurrentNarrativePage(p) { currentNarrativePage = p; }
+
+// ============== OBSERVATION CASCADE STATE ==============
+// Nested self-observation: observers watching observers
+export let cascadeDepth = 0;
+export let cascadeLevels = [];
+export let cascadeSyncActive = false;
+export let cascadeSyncIntensity = 0;
+
+export function setCascadeDepth(d) { cascadeDepth = d; }
+export function setCascadeLevels(l) { cascadeLevels = l; }
+export function setCascadeSyncActive(a) { cascadeSyncActive = a; }
+export function setCascadeSyncIntensity(i) { cascadeSyncIntensity = i; }

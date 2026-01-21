@@ -6,6 +6,7 @@ import * as state from '../state.js';
 import { hsla } from '../config.js';
 import { getKolmogorovState, getObserverEffect } from './kolmogorov.js';
 import { getInvariantSummary } from './invariants.js';
+import { getCascadeState, getStrangeLoopIntensity } from './observation-cascade.js';
 
 // Resonance state
 let resonanceStrength = 0;        // How strongly systems couple
@@ -13,6 +14,8 @@ let coherenceLevel = 0;           // Agreement between observers
 let feedbackIntensity = 0;        // Strength of feedback loops
 let systemicStability = 0;        // Overall stability from resonance
 let dissonance = 0;               // Conflict between observations
+let cascadeContribution = 0;      // Cascade's contribution to resonance
+let strangeLoopResonance = 0;     // When the loop truly closes
 
 // History for resonance patterns
 const resonanceHistory = [];
@@ -28,6 +31,8 @@ export function updateResonance() {
   const kolmogorov = getKolmogorovState();
   const observer = getObserverEffect();
   const invariants = getInvariantSummary();
+  const cascade = getCascadeState();
+  const strangeLoop = getStrangeLoopIntensity();
 
   // Compute coherence: do the observers agree?
   // High complexity + few invariants = coherent (system is chaotic)
@@ -41,18 +46,43 @@ export function updateResonance() {
   // Agreement score: coherent when complexity and invariant density are inversely related
   const expectedInvariants = 1 - complexityLevel; // Low complexity → expect many invariants
   const actualInvariants = Math.min(1, invariantDensity);
-  const agreement = 1 - Math.abs(expectedInvariants - actualInvariants);
+  const baseAgreement = 1 - Math.abs(expectedInvariants - actualInvariants);
+
+  // Cascade contributes to coherence when its levels are aligned
+  cascadeContribution = cascade.avgCoherence * (cascade.syncActive ? 1.5 : 1);
+
+  // Combined agreement including cascade
+  const agreement = baseAgreement * 0.6 + cascadeContribution * 0.4;
 
   coherenceLevel = coherenceLevel * 0.95 + agreement * 0.05;
 
   // Dissonance: when observations contradict
+  // Cascade dissonance: when higher levels diverge from lower levels
+  let cascadeDissonance = 0;
+  if (cascade.levels.length >= 2) {
+    // Compare coherence between adjacent levels
+    for (let i = 0; i < cascade.levels.length - 1; i++) {
+      const diff = Math.abs(cascade.levels[i].coherence - cascade.levels[i + 1].coherence);
+      cascadeDissonance += diff;
+    }
+    cascadeDissonance /= cascade.levels.length - 1;
+  }
+
   const predictedStability = invariants.strongInvariants / 10;
   const actualStability = 1 - (observer.observerPerturbation + observer.measurementCollapse) / 2;
-  dissonance = Math.abs(predictedStability - actualStability);
+  const baseDissonance = Math.abs(predictedStability - actualStability);
+
+  // Combined dissonance
+  dissonance = baseDissonance * 0.6 + cascadeDissonance * 0.4;
+
+  // Strange loop resonance: when observation affects what is observed
+  // This is a special state where the cascade's top level correlates with bottom
+  strangeLoopResonance = strangeLoop * (1 - dissonance);
 
   // Resonance strength: positive when coherent, negative when dissonant
+  // Boosted by strange loop resonance
   const rawResonance = coherenceLevel > COHERENCE_THRESHOLD
-    ? (coherenceLevel - COHERENCE_THRESHOLD) * 2
+    ? (coherenceLevel - COHERENCE_THRESHOLD) * 2 + strangeLoopResonance * 0.5
     : -(COHERENCE_THRESHOLD - coherenceLevel);
 
   resonanceStrength = resonanceStrength * 0.9 + rawResonance * 0.1;
@@ -225,6 +255,46 @@ export function drawResonance() {
       ctx.stroke();
     }
   }
+
+  // Draw strange loop visualization when the loop closes
+  if (strangeLoopResonance > 0.2) {
+    const loopAlpha = strangeLoopResonance * 0.2;
+
+    // Draw a figure-8 / infinity symbol representing the strange loop
+    const loopSize = 80 + strangeLoopResonance * 40;
+    const rotationSpeed = time * 0.002;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotationSpeed);
+
+    ctx.beginPath();
+    // Parametric figure-8 (lemniscate)
+    for (let t = 0; t <= Math.PI * 2; t += 0.1) {
+      const scale = loopSize / (1 + Math.sin(t) * Math.sin(t));
+      const x = scale * Math.cos(t);
+      const y = scale * Math.sin(t) * Math.cos(t);
+      if (t === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+
+    // Gradient stroke for the infinity loop
+    ctx.strokeStyle = hsla(270, 70, 65, loopAlpha);
+    ctx.lineWidth = 2 + strangeLoopResonance * 2;
+    ctx.stroke();
+
+    // Inner glow
+    const loopGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, loopSize);
+    loopGradient.addColorStop(0, hsla(280, 60, 60, loopAlpha * 0.5));
+    loopGradient.addColorStop(0.5, hsla(260, 50, 50, loopAlpha * 0.2));
+    loopGradient.addColorStop(1, 'transparent');
+
+    ctx.fillStyle = loopGradient;
+    ctx.fill();
+
+    ctx.restore();
+  }
 }
 
 // Export resonance state
@@ -234,6 +304,8 @@ export function getResonanceState() {
     coherenceLevel,
     feedbackIntensity,
     systemicStability,
-    dissonance
+    dissonance,
+    cascadeContribution,
+    strangeLoopResonance
   };
 }

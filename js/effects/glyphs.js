@@ -7,13 +7,15 @@ import { hsla } from '../config.js';
 import { getKolmogorovState } from '../systems/kolmogorov.js';
 import { getResonanceState } from '../systems/resonance.js';
 import { getTopologyState } from '../systems/topology.js';
-import { playGlyphSound } from './audio.js';
+import { getCascadeState, getStrangeLoopIntensity } from '../systems/observation-cascade.js';
+import { playGlyphSound, playCascadeGlyphSound } from './audio.js';
 import { logEvent } from '../ui/journal.js';
 
 // Dominant trait vocabulary - maps encoding indices to descriptive names
 const DOMINANT_TRAITS = [
   'entropic', 'turbulent', 'intricate', 'labyrinthine', 'recursive',
-  'coherent', 'dissonant', 'stable', 'aware', 'deep'
+  'coherent', 'dissonant', 'stable', 'aware', 'deep',
+  'cascading', 'synchronized', 'strange-looped'
 ];
 
 // Determine the dominant trait name from glyph encoding
@@ -35,6 +37,8 @@ function getGlyphTraitName(encoding) {
 // Active glyphs
 const glyphs = [];
 const MAX_GLYPHS = 8;
+const MAX_CASCADE_GLYPHS = 2;
+let cascadeGlyphCount = 0;
 
 // Glyph class - a visual encoding of a system state snapshot
 class Glyph {
@@ -183,40 +187,195 @@ class Glyph {
   }
 }
 
+// Cascade Glyph - special glyph for cascade synchronization events
+// Visual structure represents the observation hierarchy directly
+class CascadeGlyph extends Glyph {
+  constructor(encoding) {
+    super(encoding);
+    this.isCascadeGlyph = true;
+    this.maxLife = 800 + Math.random() * 400; // Longer life
+    this.scale = 0.7 + Math.random() * 0.3; // Larger
+    this.rotationSpeed = 0.001; // Slower rotation
+
+    // Cascade glyphs spawn near center
+    this.x = state.width / 2 + (Math.random() - 0.5) * 200;
+    this.y = state.height / 2 + (Math.random() - 0.5) * 200;
+
+    // Cascade-specific properties
+    this.levelCount = 4;
+    this.levelRadii = encoding.slice(0, 4); // First 4 values are level coherences
+  }
+
+  draw() {
+    const { ctx, time } = state;
+    const enc = this.encoding;
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.scale(this.scale, this.scale);
+
+    const baseSize = 50;
+
+    // Draw nested rings representing observation levels
+    // Inner = level 0 (base entropy), outer = level 3 (meta-meta-meta)
+    for (let i = 0; i < this.levelCount; i++) {
+      const levelCoherence = this.levelRadii[i] || 0;
+      const radius = baseSize * (0.3 + i * 0.25);
+      const hue = 200 + i * 30; // Cyan to violet progression
+      const layerAlpha = this.alpha * (0.3 + levelCoherence * 0.7);
+
+      // Draw level ring
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = hsla(hue, 60, 55, layerAlpha);
+      ctx.lineWidth = 2 + levelCoherence * 3;
+      ctx.stroke();
+
+      // Draw coherence indicator - arc length proportional to coherence
+      const arcLength = levelCoherence * Math.PI * 1.8;
+      const arcOffset = time * 0.005 * (i + 1);
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, arcOffset, arcOffset + arcLength);
+      ctx.strokeStyle = hsla(hue, 70, 65, layerAlpha * 1.5);
+      ctx.lineWidth = 3 + levelCoherence * 2;
+      ctx.stroke();
+
+      // Draw connection to next level (observation arrow)
+      if (i < this.levelCount - 1) {
+        const nextRadius = baseSize * (0.3 + (i + 1) * 0.25);
+        const connectionAngle = arcOffset + arcLength / 2;
+
+        ctx.beginPath();
+        ctx.moveTo(
+          Math.cos(connectionAngle) * radius,
+          Math.sin(connectionAngle) * radius
+        );
+        ctx.lineTo(
+          Math.cos(connectionAngle) * nextRadius,
+          Math.sin(connectionAngle) * nextRadius
+        );
+        ctx.strokeStyle = hsla((hue + 15) % 360, 50, 60, layerAlpha * 0.6);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+
+    // Draw strange loop if present (encoding[6])
+    const strangeLoopIntensity = enc[6] || 0;
+    if (strangeLoopIntensity > 0.2) {
+      // Spiral connecting outer to inner
+      ctx.beginPath();
+      const spiralPoints = 30;
+      for (let s = 0; s < spiralPoints; s++) {
+        const t = s / spiralPoints;
+        const angle = t * Math.PI * 4 + time * 0.003; // 2 rotations
+        const r = baseSize * (0.3 + (1 - t) * 0.75); // Outer to inner
+        const px = Math.cos(angle) * r;
+        const py = Math.sin(angle) * r;
+        if (s === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.strokeStyle = hsla(280, 60, 60, this.alpha * strangeLoopIntensity * 0.5);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Central sync indicator
+    const syncIntensity = enc[5] || 0;
+    if (syncIntensity > 0.3) {
+      const pulse = Math.sin(time * 0.08) * 0.3 + 0.7;
+      ctx.beginPath();
+      ctx.arc(0, 0, 8 * pulse, 0, Math.PI * 2);
+      ctx.fillStyle = hsla(270, 70, 65, this.alpha * syncIntensity);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
 // Encode current system state into a glyph
 function encodeSystemState() {
   const kolmogorov = getKolmogorovState();
   const resonance = getResonanceState();
   const topology = getTopologyState();
+  const cascade = getCascadeState();
+  const strangeLoop = getStrangeLoopIntensity();
 
   // Create encoding from various system metrics
   return [
-    state.systemEntropy,                          // Spatial disorder
-    state.metaEntropy,                            // Temporal disorder of disorder
-    kolmogorov.complexity || 0,                   // Algorithmic complexity
-    kolmogorov.metaComplexity || 0,               // Meta-complexity
-    Math.min(1, kolmogorov.recursionDepth / 3),   // Recursion depth
-    resonance.coherenceLevel,                     // Observer agreement
-    resonance.dissonance,                         // Observer conflict
-    resonance.systemicStability,                  // Emergent stability
-    topology.selfAwareness,                       // Meta-observation level
-    state.observationDepth / 3                    // How deeply system observes itself
+    state.systemEntropy,                          // 0: Spatial disorder
+    state.metaEntropy,                            // 1: Temporal disorder of disorder
+    kolmogorov.complexity || 0,                   // 2: Algorithmic complexity
+    kolmogorov.metaComplexity || 0,               // 3: Meta-complexity
+    Math.min(1, kolmogorov.recursionDepth / 3),   // 4: Recursion depth
+    resonance.coherenceLevel,                     // 5: Observer agreement
+    resonance.dissonance,                         // 6: Observer conflict
+    resonance.systemicStability,                  // 7: Emergent stability
+    topology.selfAwareness,                       // 8: Meta-observation level
+    state.observationDepth / 3,                   // 9: How deeply system observes itself
+    cascade.avgCoherence,                         // 10: Cascade average coherence
+    cascade.syncActive ? cascade.syncIntensity : 0, // 11: Cascade sync state
+    strangeLoop                                   // 12: Strange loop intensity
+  ];
+}
+
+// Special encoding for cascade sync glyphs
+function encodeCascadeSync() {
+  const cascade = getCascadeState();
+  const strangeLoop = getStrangeLoopIntensity();
+
+  // Encoding directly from cascade levels creates a signature of the hierarchy
+  const levelValues = cascade.levels.map(l => l.coherence);
+
+  return [
+    ...levelValues,                               // 0-3: Individual level coherences
+    cascade.avgCoherence,                         // 4: Average coherence
+    cascade.syncIntensity,                        // 5: Sync intensity
+    strangeLoop,                                  // 6: Strange loop
+    1 - Math.abs(levelValues[0] - levelValues[3]), // 7: Top-bottom alignment
+    levelValues.reduce((a, b) => a + b, 0) / 4,  // 8: Mean
+    Math.max(...levelValues) - Math.min(...levelValues) // 9: Spread
   ];
 }
 
 // Check if new glyph should spawn
 let lastGlyphTime = 0;
+let lastCascadeGlyphTime = 0;
 const GLYPH_COOLDOWN = 300; // ~5 seconds
+const CASCADE_GLYPH_COOLDOWN = 600; // ~10 seconds
 
 export function updateGlyphs() {
-  // Update existing glyphs
+  // Update existing glyphs and track cascade glyph count
+  cascadeGlyphCount = 0;
   for (let i = glyphs.length - 1; i >= 0; i--) {
     if (!glyphs[i].update()) {
       glyphs.splice(i, 1);
+    } else if (glyphs[i].isCascadeGlyph) {
+      cascadeGlyphCount++;
     }
   }
 
-  // Maybe spawn new glyph
+  // Check for cascade sync glyph spawn
+  const cascade = getCascadeState();
+  if (cascade.syncActive &&
+      cascade.syncIntensity > 0.5 &&
+      cascadeGlyphCount < MAX_CASCADE_GLYPHS &&
+      state.time - lastCascadeGlyphTime > CASCADE_GLYPH_COOLDOWN) {
+
+    const encoding = encodeCascadeSync();
+    const cascadeGlyph = new CascadeGlyph(encoding);
+    glyphs.push(cascadeGlyph);
+    lastCascadeGlyphTime = state.time;
+    lastGlyphTime = state.time; // Also reset regular cooldown
+
+    playCascadeGlyphSound(encoding);
+    logEvent('cascade glyph', 'glyph');
+    return; // Only spawn one glyph per frame
+  }
+
+  // Maybe spawn regular glyph
   if (state.time - lastGlyphTime < GLYPH_COOLDOWN) return;
   if (glyphs.length >= MAX_GLYPHS) return;
 

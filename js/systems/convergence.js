@@ -54,6 +54,13 @@ export const CONVERGENCES = {
     whispers: ['past and space align', 'total coherence in time', 'the pattern remembers itself', 'temporal entanglement'],
     hue: 180, // Cyan
   },
+  // Infinite Regress: cascade sync + high observation depth + self-model predicting
+  infiniteRegress: {
+    check: () => state.cascadeSyncActive && state.cascadeSyncIntensity > 0.5 &&
+                 state.observationDepth > 1.5 && state.selfModelMode === 'predicting',
+    whispers: ['observers all the way down', 'the eye sees itself seeing', 'infinite recursion', 'strange loop complete'],
+    hue: 290, // Deep violet
+  },
 };
 
 export function checkConvergence() {
