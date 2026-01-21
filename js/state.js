@@ -367,3 +367,21 @@ export function setCascadeDepth(d) { cascadeDepth = d; }
 export function setCascadeLevels(l) { cascadeLevels = l; }
 export function setCascadeSyncActive(a) { cascadeSyncActive = a; }
 export function setCascadeSyncIntensity(i) { cascadeSyncIntensity = i; }
+
+// ============== OBSERVER FEEDBACK STATE ==============
+// The strange loop: observation changes the observed
+export let observerFeedbackIntensity = 0;
+export let observerFeedbackPhase = 0;
+export let loopClosed = false;
+export let loopClosedIntensity = 0;
+export let loopPressure = 0;
+export let loopBreaking = false;
+export let breakProgress = 0;
+
+export function setObserverFeedbackIntensity(i) { observerFeedbackIntensity = i; }
+export function setObserverFeedbackPhase(p) { observerFeedbackPhase = p; }
+export function setLoopClosed(c) { loopClosed = c; }
+export function setLoopClosedIntensity(i) { loopClosedIntensity = i; }
+export function setLoopPressure(p) { loopPressure = p; }
+export function setLoopBreaking(b) { loopBreaking = b; }
+export function setBreakProgress(p) { breakProgress = p; }

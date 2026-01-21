@@ -2,6 +2,7 @@
 
 import { MOUSE_INFLUENCE, isPrime, hsla } from '../config.js';
 import * as state from '../state.js';
+import { getFeedbackForce } from '../systems/observer-feedback.js';
 
 export class Particle {
   constructor() {
@@ -134,6 +135,28 @@ export class Particle {
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
       this.vx += (dx / dist) * observerStrength * this.depth;
       this.vy += (dy / dist) * observerStrength * this.depth;
+    }
+
+    // Observer feedback - the strange loop closes
+    // When meta-observers are coherent, their coherence feeds back
+    // into base reality, creating gentle organizing patterns
+    const feedback = getFeedbackForce(this.x, this.y, this.depth);
+    this.vx += feedback.fx;
+    this.vy += feedback.fy;
+
+    // Coherent observation affects particle predictability
+    // Positive boost: coherence → predictability → lower entropy → more coherence
+    // Negative boost: breaking → chaos → higher entropy → loop opens
+    if (feedback.coherenceBoost > 0) {
+      const predictability = 1 - feedback.coherenceBoost;
+      this.vx *= predictability + (1 - predictability) * 0.95;
+      this.vy *= predictability + (1 - predictability) * 0.95;
+    } else if (feedback.coherenceBoost < 0) {
+      // Breaking: add chaotic impulse proportional to negative boost
+      const chaosBoost = -feedback.coherenceBoost;
+      this.vx += (Math.random() - 0.5) * chaosBoost * 0.3;
+      this.vy += (Math.random() - 0.5) * chaosBoost * 0.3;
+      this.energy = Math.min(1, this.energy + chaosBoost * 0.1);
     }
 
     // Energy decay

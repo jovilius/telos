@@ -17,6 +17,7 @@ import { updateResonance, drawResonance } from './systems/resonance.js';
 import { updateTopology, drawTopology } from './systems/topology.js';
 import { updatePhaseSpace, drawPhaseSpace } from './systems/phase-space.js';
 import { updateObservationCascade, drawObservationCascade } from './systems/observation-cascade.js';
+import { updateObserverFeedback, drawObserverFeedback } from './systems/observer-feedback.js';
 import { Constellation } from './effects/constellation.js';
 import { Whisper, Ripple, Attractor, EchoField, checkMemoryMilestones } from './effects/visual.js';
 import { updateGlyphs, drawGlyphs } from './effects/glyphs.js';
@@ -125,6 +126,7 @@ export function animate() {
     updateTopology();
     updatePhaseSpace();
     updateObservationCascade();
+    updateObserverFeedback();
   }
 
   if (frameCycle === 5) {
@@ -328,6 +330,7 @@ export function animate() {
   drawRecursiveObserver();
   drawTrajectorySignature();
   drawObservationCascade();
+  drawObserverFeedback();
 
   // Draw optional visualizations (toggle with Shift+1-8)
   if (state.showMutualInfo) drawMutualInformation();
